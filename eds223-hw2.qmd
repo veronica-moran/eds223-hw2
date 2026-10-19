@@ -6,6 +6,7 @@ library(here)
 library(stars)
 library(tmap)
 library(spData)
+library(gt)
 ```
 
 
@@ -67,6 +68,10 @@ holc <- st_transform(holc, crs = st_crs(ejscreen))
 ```
 
 ```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| output: false
 crashes_sf <- crashes |>
   filter(!is.na(LONGITUDE) & !is.na(LATITUDE)) |>
   rename(long = LONGITUDE, lat = LATITUDE) |>
@@ -99,22 +104,84 @@ if (st_crs(holc) == st_crs(ejscreen)) {
 ```
 
 ```{r}
-# "Esri.WorldShadedRelief"
-#CartoDB
-# "Esri.WorldTopoMap"
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-height: 5
+#| fig-width: 6
+#| fig-align: center
 
 hist_red <-
   tm_basemap("Esri.WorldStreetMap", zoom = 10, alpha = 0.55) +
   tm_shape(holc) +
   tm_polygons(
     fill = "grade",
+    fill_alpha = 0.7,
     fill.scale = tm_scale_categorical(
-      values = c("darkgreen", "mediumblue", "yellow2", "red3")
+      values = c("#2a5f1a", "#0155af", "#f9d03b", "#900011"),
+      value.na = "grey50"
     ),
-    fill.legend = tm_legend(title = "HOLC Neighborhood")
+    col = "grey20",
+    lwd = 0.3,
+    fill.legend = tm_legend(
+      title = "HOLC Neighborhood Grades",
+      position = tm_pos_in("right", "bottom"),
+      bg.color = "white"
+    )
   ) +
+  tm_compass(position = c("left", "bottom"), size = 1.5) +
   tm_scalebar(position = c("right", "bottom")) +
-  tm_compass(position = c("right", "top"))
+  tm_layout(
+    main.title = "Home Owners' Loan Corporation Neighborhood Grades in Los Angeles, CA (1939)",
+    text.fontfamily = "sans",
+    style = "natural",
+    outer.bg = TRUE,
+    outer.bg.color = "white",
+    frame = TRUE,
+    legend.text.size = 0.5,
+    legend.title.size = 0.6
+  )
 
 hist_red
+```
+
+```{r}
+la_cnty <- ejscreen |>
+  filter(CNTY_NAME == "Los Angeles County")
+```
+
+```{r}
+la_cnty_cent <- st_centroid(la_cnty)
+```
+
+```{r}
+holc_census <- st_join(la_cnty_cent, y = holc, join = st_within)
+```
+
+```{r}
+holc_cens_summ <- holc_census |>
+  group_by(grade) |>
+  summarise(n_bg = n()) |>
+  st_drop_geometry() |>
+  mutate(
+    pcnt_cens_holc = (n_bg / sum(n_bg)) * 100
+  ) |>
+  mutate(grade = ifelse(is.na(grade), "No HOLC grade", grade))
+
+```
+
+```{r}
+holc_cens_summ |>
+  select("grade", "pcnt_cens_holc") |>
+  gt() |>
+  tab_header(title = md("Census Block Groups Per HOLC Grade")) |>
+  cols_label(
+    grade = "HOLC Grade",
+    pcnt_cens_holc = "Percent of Census Block Groups"
+  ) |>
+  fmt_number(
+    columns = pcnt_cens_holc,
+    decimals = 2,
+    pattern = "{x}%"
+  )
 ```
