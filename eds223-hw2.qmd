@@ -1,3 +1,18 @@
+---
+title: "EDS 223: Homework 2"
+subtitle: "Mapping HOLC Neighborhoods in Los Angeles"
+author: "Veronica Moran"
+date: October 20, 2026
+format: typst
+execute:
+  echo: true
+  warning: false
+  message: false
+  results: hide
+---
+
+
+
 ```{r}
 #| include: false
 library(tidyverse)
@@ -17,28 +32,7 @@ library(gt)
 ## Data 
 
 
-
-
-
 ```{r}
-#| echo: false
-#| message: false
-#| warning: false
-#| output: false
-
-# Reading in data
-ejscreen <- sf::st_read(here::here(
-  "data",
-  "ejscreen",
-  "EJSCREEN_2023_BG_StatePct_with_AS_CNMI_GU_VI.gdb"
-))
-```
-
-
-```{r}
-#| echo: false
-#| message: false
-#| warning: false
 #| output: false
 
 # Reading in data
@@ -62,54 +56,57 @@ crashes <- read_csv(here::here(
 ```
 
 ```{r}
-#| echo: false
-# Transforming the CRS o
+# Transforming the CRS
 holc <- st_transform(holc, crs = st_crs(ejscreen))
-```
 
-```{r}
-#| echo: false
-#| message: false
-#| warning: false
-#| output: false
+# Verifying CRS match
+if (st_crs(holc) != st_crs(ejscreen)) {
+  stop("coordinate reference systems do not match")
+} else {
+  print("it's a match!")
+}
+
+
+# Checking missing coordinate values
+sum(is.na(crashes$LATITUDE))
+sum(is.na(crashes$LONGITUDE))
+
+sum(is.na(crashes$POINT_X))
+sum(is.na(crashes$POINT_Y))
+
+# Filtering and transforming to simple feature and setting CRS to match ejscreen
 crashes_sf <- crashes |>
-  filter(!is.na(LONGITUDE) & !is.na(LATITUDE)) |>
-  rename(long = LONGITUDE, lat = LATITUDE) |>
+  filter(!is.na(POINT_X) & !is.na(POINT_Y)) |>
+  rename(long = POINT_X, lat = POINT_Y) |>
   st_as_sf(
     coords = c("long", "lat"),
-    crs = 3857
+    crs = 4326
+  ) |>
+  st_transform(
+    crs = st_crs(ejscreen)
   )
-```
 
-```{r}
-#| echo: false
-#| output: false
 # Verifying CRS match
-if (st_crs(crashes_sf) == st_crs(ejscreen)) {
-  print("it's a match!")
+if (st_crs(crashes_sf) != st_crs(ejscreen)) {
+  stop("coordinate reference systems do not match")
 } else {
-  print("still not a match")
+  print("it's a match!")
 }
+unique(crashes_sf$ACCIDENT_YEAR)
 ```
 
-```{r}
-#| echo: false
-#| output: false
-# Verifying CRS match
-if (st_crs(holc) == st_crs(ejscreen)) {
-  print("it's a match!")
-} else {
-  print("still not a match")
-}
-```
 
 ```{r}
-#| echo: false
-#| message: false
-#| warning: false
+# Creating color palette
+holc_colors <- c("#2a5f1a", "#0155af", "#f9d03b", "#900011", "grey50")
+```
+
+
+```{r}
 #| fig-height: 5
 #| fig-width: 6
 #| fig-align: center
+# Mapping HOLC grades in Los Angeles
 
 hist_red <-
   tm_basemap("Esri.WorldStreetMap", zoom = 10, alpha = 0.55) +
@@ -118,7 +115,7 @@ hist_red <-
     fill = "grade",
     fill_alpha = 0.7,
     fill.scale = tm_scale_categorical(
-      values = c("#2a5f1a", "#0155af", "#f9d03b", "#900011"),
+      values = holc_colors,
       value.na = "grey50"
     ),
     col = "grey20",
@@ -132,7 +129,7 @@ hist_red <-
   tm_compass(position = c("left", "bottom"), size = 1.5) +
   tm_scalebar(position = c("right", "bottom")) +
   tm_layout(
-    main.title = "Home Owners' Loan Corporation Neighborhood Grades in Los Angeles, CA (1939)",
+    main.title = "HOLC Neighborhood Grades in Los Angeles, CA (1939)",
     text.fontfamily = "sans",
     style = "natural",
     outer.bg = TRUE,
@@ -141,37 +138,46 @@ hist_red <-
     legend.text.size = 0.5,
     legend.title.size = 0.6
   )
-
 hist_red
 ```
 
 ```{r}
+# Filtering to LA County
+# Using st_centroid to assign one HOLC grade per census block group
+
 la_cnty <- ejscreen |>
-  filter(CNTY_NAME == "Los Angeles County")
+  filter(CNTY_NAME == "Los Angeles County") |>
+  st_centroid()
 ```
 
 ```{r}
-la_cnty_cent <- st_centroid(la_cnty)
+# Joining census block groups and HOLC grade data
+
+holc_census <- st_join(la_cnty, holc, join = st_within)
+
+# Verifying join rows match
+if (nrow(holc_census) == nrow(la_cnty)) {
+  print("join matches original data dimensions")
+} else {
+  warning("join does not match original data dimensions")
+  print(paste("holc_census has", nrow(holc_census), "rows"))
+  print(paste("la_cnty has", nrow(la_cnty), "rows"))
+}
 ```
 
 ```{r}
-holc_census <- st_join(la_cnty_cent, y = holc, join = st_within)
-```
+# Grouping census block groups by HOLC grade
+# Calculating percentage of census block groups per HOLC grade
+# Creating table of summary
 
-```{r}
 holc_cens_summ <- holc_census |>
   group_by(grade) |>
   summarise(n_bg = n()) |>
   st_drop_geometry() |>
   mutate(
-    pcnt_cens_holc = (n_bg / sum(n_bg)) * 100
+    pcnt_cens_holc = (n_bg / sum(n_bg)) * 100,
+    grade = ifelse(is.na(grade), "No HOLC grade", grade)
   ) |>
-  mutate(grade = ifelse(is.na(grade), "No HOLC grade", grade))
-
-```
-
-```{r}
-holc_cens_summ |>
   select("grade", "pcnt_cens_holc") |>
   gt() |>
   tab_header(title = md("Census Block Groups Per HOLC Grade")) |>
@@ -183,5 +189,239 @@ holc_cens_summ |>
     columns = pcnt_cens_holc,
     decimals = 2,
     pattern = "{x}%"
+  )
+holc_cens_summ
+```
+
+```{r}
+#| fig-height: 5
+#| fig-width: 6.5
+#| fig-align: center
+# Filtering out NA HOLC grade rows
+
+holc_bg <- holc_census |>
+  filter(!is.na(grade))
+
+# Creating bar graph of mean low income percentage by HOLC grade
+
+hc_low_income <- holc_bg |>
+  group_by(grade) |>
+  summarise(mean_lowinc = mean(LOWINCPCT, na.rm = TRUE)) |>
+  mutate(mean_lowinc_pct = mean_lowinc * 100) |>
+  st_drop_geometry() |>
+  ggplot(
+    aes(
+      x = grade,
+      y = mean_lowinc_pct,
+      fill = grade
+    )
+  ) +
+  geom_col() +
+  scale_fill_manual(
+    values = holc_colors
+  ) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1)) +
+  labs(
+    title = "Low Income Percentage by HOLC Grade",
+    x = "HOLC Grade",
+    y = "Average Low Income Percentage",
+    fill = "HOLC Grade"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid = element_blank()
+  )
+
+hc_low_income
+```
+
+```{r}
+# Summarizing mean particulate matter 2.5 percentile by life expectancy
+pm25_lle <- holc_bg |>
+  group_by(grade) |>
+  summarise(
+    mean_pm25 = mean(P_PM25, na.rm = TRUE),
+    mean_lle = mean(P_LIFEEXPPCT, na.rm = TRUE)
+  ) |>
+  st_drop_geometry()
+```
+
+
+```{r}
+#| fig-height: 5
+#| fig-width: 6.5
+#| fig-align: center
+# Scatter plot of mean particulate matter and low life expectancy percentiles by HOLC grade
+
+ggplot(
+  data = pm25_lle,
+  mapping = aes(
+    x = mean_pm25,
+    y = mean_lle,
+    color = grade
+  )
+) +
+  geom_point(size = 3) +
+  scale_color_manual(
+    values = holc_colors
+  ) +
+  labs(
+    title = "HOLC Particulate Matter 2.5 and Low Life Expectancy",
+    x = "Average Particulate Matter 2.5 Percentile",
+    y = "Average Low Life Expectancy Percentile",
+    color = "HOLC Grade"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  )
+```
+
+
+```{r}
+# Filtering to bicycle and pedestrian accidents
+bp_acc <- crashes_sf |>
+  filter(
+    BICYCLE_ACCIDENT == "Y" | PEDESTRIAN_ACCIDENT == "Y"
+  )
+
+# Joining accident data to HOLC grades
+bp_acc_holc <- st_join(bp_acc, y = holc, join = st_within)
+
+# Verifying join row counts match
+if (nrow(bp_acc_holc) == nrow(bp_acc)) {
+  print("join matches original data dimensions")
+} else {
+  warning("join does not match original data dimensions")
+  print(paste("bp_acc_holc has", nrow(bp_acc_holc), "rows"))
+  print(paste("bp_acc has", nrow(bp_acc), "rows"))
+}
+
+# Removing NA HOLC grade
+bp_acc_holc <- bp_acc_holc |>
+  filter(!is.na(grade))
+```
+
+```{r}
+# Summarizing bicycle and pedestrian crashes and fatalities by HOLC grade
+accidents <- bp_acc_holc |>
+  group_by(grade) |>
+  summarise(
+    n_bike_crash = sum(BICYCLE_ACCIDENT == "Y", na.rm = TRUE),
+    n_bike_fatal = sum(COUNT_BICYCLIST_KILLED, na.rm = TRUE),
+    n_ped_crash = sum(PEDESTRIAN_ACCIDENT == "Y", na.rm = TRUE),
+    n_ped_fatal = sum(COUNT_PED_KILLED, na.rm = TRUE)
+  ) |>
+  st_drop_geometry() |>
+  mutate(
+    pct_bike_crash = n_bike_crash / sum(n_bike_crash) * 100,
+    pct_bike_fatal = n_bike_fatal / sum(n_bike_fatal) * 100,
+    pct_ped_crash = n_ped_crash / sum(n_ped_crash) * 100,
+    pct_ped_fatal = n_ped_fatal / sum(n_ped_fatal) * 100
+  )
+
+# Pivoting long for visualization
+accidents_long <- accidents |>
+  select(
+    grade,
+    pct_bike_crash,
+    pct_bike_fatal,
+    pct_ped_crash,
+    pct_ped_fatal
+  ) |>
+  pivot_longer(
+    cols = c(pct_bike_crash, pct_bike_fatal, pct_ped_crash, pct_ped_fatal),
+    names_to = "type",
+    values_to = "Percentage"
+  ) |>
+  mutate(
+    type = fct_recode(
+      type,
+      "Bicycle Crashes" = "pct_bike_crash",
+      "Bicycle Fatalities" = "pct_bike_fatal",
+      "Pedestrian Crashes" = "pct_ped_crash",
+      "Pedestrian Fatalities" = "pct_ped_fatal"
+    )
+  )
+```
+
+```{r}
+#| fig-height: 5
+#| fig-width: 6.5
+#| fig-align: center
+# Creating bar graphs for bicycle crashes and bicycle crash fatalities
+accidents_long |>
+  filter(type == "Bicycle Crashes" | type == "Bicycle Fatalities") |>
+  ggplot(
+    aes(
+      x = grade,
+      y = Percentage,
+      fill = grade
+    )
+  ) +
+  geom_col() +
+  scale_fill_manual(
+    values = holc_colors
+  ) +
+  scale_y_continuous(
+    labels = scales::label_percent(scale = 1)
+  ) +
+  facet_wrap(
+    ~type,
+    ncol = 2
+  ) +
+  labs(
+    title = "Bicycle Crashes and Fatalities by HOLC Grade",
+    x = "HOLC Grade",
+    y = "Percent of Incidents",
+    fill = "HOLC Grade"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid = element_blank(),
+    strip.background = element_blank()
+  )
+```
+
+
+
+```{r}
+#| fig-height: 5
+#| fig-width: 6.5
+#| fig-align: center
+# Creating bar graphs for pedestrian crashes and pedestrian crash fatalities
+accidents_long |>
+  filter(type == "Pedestrian Crashes" | type == "Pedestrian Fatalities") |>
+  ggplot(
+    aes(
+      x = grade,
+      y = Percentage,
+      fill = grade
+    )
+  ) +
+  geom_col() +
+  scale_fill_manual(
+    values = holc_colors
+  ) +
+  scale_y_continuous(
+    labels = scales::label_percent(scale = 1)
+  ) +
+  facet_wrap(
+    ~type,
+    ncol = 2
+  ) +
+  labs(
+    title = "Pedestrian Crashes and Fatalities by HOLC Grade",
+    x = "HOLC Grade",
+    y = "Percent of Incidents",
+    fill = "HOLC Grade"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid = element_blank(),
+    strip.background = element_blank()
   )
 ```
