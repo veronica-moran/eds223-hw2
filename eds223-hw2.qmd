@@ -11,8 +11,6 @@ execute:
   results: hide
 ---
 
-
-
 ```{r}
 #| include: false
 library(tidyverse)
@@ -24,36 +22,61 @@ library(spData)
 library(gt)
 ```
 
+```{r}
+#| include: false
+# Creating color palette
+holc_colors <- c("#2a5f1a", "#0155af", "#f9d03b", "#900011", "grey50")
+```
+
 
 ## Background
-
+In 1933 the Home Owners' Loan Act was passed, which aimed to help homeowners that were facing foreclosure by establishing the Home Owners' Loan Corporation (HOLC) to refinance mortgages [1]. The HOLC surveyed cities to classify neighborhoods by lending risk level, classified as Home Owners' Loan Corporation. Appraisers assessed housing age, condition, transportation access, proximity to hazards or amenities, and economic, racial, and ethnic status of residents. Maps were produced color coding neighborhoods by loan approval level HOLC grade: green for "Best", blue for "Still Desirable", yellow for "Definitely Declining", and red for "Hazardous". Green and blue neighborhoods were typically white neighborhoods, and had high home loan approvals. Neighborhoods that were predominately composed of Black Americans and immigrants were redlined, and denied home loans [2]. This discriminatory lending practice resulted in the creation of racial economic and housing inequalities.
+A recent study analyzed the correlation between structural racism in historically redlined neighborhoods in Boston, MA and pedestrian fatalities between 2010 to 2019. Results showed that pedestrian fatalities were highest in areas that were historically redlined. As historical HOLC grade decreased, there was an increase in pedestrian fatality rate [3].
+In this analysis, I examine pedestrian crashed and fatalities in historical HOLC neighborhoods of Los Angeles, CA.
 
 
 ## Data 
+Historical HOLC data was originally downloaded from University of Richmonds' [Mapping Inequality project](https://dsl.richmond.edu/panorama/redlining/data). 
+
+Bike and pedestrian accident data came from the [Statewide Integrated Traffice Records System (SWITRS) database](https://tims.berkeley.edu/). 
+[Census block group data]((https://19january2021snapshot.epa.gov/ejscreen_.html)) from the Environmnetal Protection Agency's Environmental Justice Screening and Mapping Tool (EJSCREEN). This data set combines environmental and demographic indicators.  
 
 
 ```{r}
 #| output: false
-
 # Reading in data
 ejscreen <- sf::st_read(here::here(
   "data",
   "ejscreen",
   "EJSCREEN_2023_BG_StatePct_with_AS_CNMI_GU_VI.gdb"
 ))
-
 holc <- sf::st_read(here::here(
   "data",
   "mapping-inequality",
   "mapping-inequality-los-angeles.json"
 ))
-
 crashes <- read_csv(here::here(
   "data",
   "SWITRS_LA",
   "Crashes.csv"
 ))
 ```
+
+# Methods
+
+Historical HOLC neighborhood data set CRS was transformed to match the EJSCREEN data set CRS. The EJSCREEN data set was filtered for Los Angeles County, and a `st_centroid()` was used to convert the census block group polygon to a single points, the HOLC grade data was then joined to the centroid. The join assigns the HOLC grade to the polygon that contains the centroid. The missing values were then filtered our of the joined census block group holc data set. The cleaned census block group holc data set was then filtered to remove missing values.
+
+
+For the crashes data set, missing coordinate values where checked to select the appropriate geometry. Missing values in geometry were filtered out and the data set was trasformed to a simple feature and matched the CRS to that of the EJSCREEN data set. The crashes data set was filtered bycycle and pedestrian accidents. This filtered data set was joined with the historical holc data set.
+
+The historiacal holc grades in the city of Los Angeles was mapped, and color coded using the loan approval HOLC grades: green for "Best", blue for "Still Desirable", yellow for "Definitely Declining", and red for "Hazardous". Percent of census block groups per HOLC grade were summarized.
+
+To compare low income percentage by HOLC grade, historical HOLC grade was grouped and and a mean summary function was applied to low income percentage (`LOWINCPCT`). The averages were plotted on a bar graph and color coded by HOLC grade.
+
+To identify potential environmental justice concerns related to air pollution, average low life expectancy and particulate matter 2.5 data was compared. The cleaned census clock group holc data set was filtered to low life expectancy percentile `P_LIFEEXPPCT` and `P_PM25`. The percentiles were converted to percentages and plotted on  scatter plot to visualize their relationship.
+
+To identify differences in bike and pedestrian crashes and fatalities in historical HOLC grade neighborhoods, the cleaned crashes data set was used to calculte percentage of bike and pedestrian crashes by HOLC grade, and plotted on a bargraph ( on bargraphs - if I decide to use more than 1)
+
 
 ```{r}
 # Transforming the CRS
@@ -66,11 +89,34 @@ if (st_crs(holc) != st_crs(ejscreen)) {
   print("it's a match!")
 }
 
+# Filtering to LA County
+# Using st_centroid to assign one HOLC grade per census block group
+la_cnty <- ejscreen |>
+  filter(CNTY_NAME == "Los Angeles County") |>
+  st_centroid()
 
+# Joining census block groups and HOLC grade data
+holc_census <- st_join(la_cnty, holc, join = st_within)
+
+# Verifying join rows match
+if (nrow(holc_census) == nrow(la_cnty)) {
+  print("join matches original data dimensions")
+} else {
+  warning("join does not match original data dimensions")
+  print(paste("holc_census has", nrow(holc_census), "rows"))
+  print(paste("la_cnty has", nrow(la_cnty), "rows"))
+}
+
+# Filtering out NA HOLC grade rows
+holc_bg <- holc_census |>
+  filter(!is.na(grade))
+```
+
+
+```{r}
 # Checking missing coordinate values
 sum(is.na(crashes$LATITUDE))
 sum(is.na(crashes$LONGITUDE))
-
 sum(is.na(crashes$POINT_X))
 sum(is.na(crashes$POINT_Y))
 
@@ -92,14 +138,36 @@ if (st_crs(crashes_sf) != st_crs(ejscreen)) {
 } else {
   print("it's a match!")
 }
+
+# Checking years in data set
 unique(crashes_sf$ACCIDENT_YEAR)
+
+# Filtering to bicycle and pedestrian accidents
+bp_acc <- crashes_sf |>
+  filter(
+    BICYCLE_ACCIDENT == "Y" | PEDESTRIAN_ACCIDENT == "Y"
+  )
+
+# Joining accident data to HOLC grades
+bp_holc <- st_join(bp_acc, y = holc, join = st_within)
+
+# Verifying join row counts match
+if (nrow(bp_holc) == nrow(bp_acc)) {
+  print("join matches original data dimensions")
+} else {
+  warning("join does not match original data dimensions")
+  print(paste("bp_acc_holc has", nrow(bp_holc), "rows"))
+  print(paste("bp_acc has", nrow(bp_acc), "rows"))
+}
+
+# Removing NA HOLC grade
+bp_holc <- bp_holc |>
+  filter(!is.na(grade))
 ```
 
 
-```{r}
-# Creating color palette
-holc_colors <- c("#2a5f1a", "#0155af", "#f9d03b", "#900011", "grey50")
-```
+# Results
+
 
 
 ```{r}
@@ -107,7 +175,6 @@ holc_colors <- c("#2a5f1a", "#0155af", "#f9d03b", "#900011", "grey50")
 #| fig-width: 6
 #| fig-align: center
 # Mapping HOLC grades in Los Angeles
-
 hist_red <-
   tm_basemap("Esri.WorldStreetMap", zoom = 10, alpha = 0.55) +
   tm_shape(holc) +
@@ -128,8 +195,8 @@ hist_red <-
   ) +
   tm_compass(position = c("left", "bottom"), size = 1.5) +
   tm_scalebar(position = c("right", "bottom")) +
+  tm_title("HOLC Neighborhood Grades in Los Angeles, CA (1939)") +
   tm_layout(
-    main.title = "HOLC Neighborhood Grades in Los Angeles, CA (1939)",
     text.fontfamily = "sans",
     style = "natural",
     outer.bg = TRUE,
@@ -141,39 +208,18 @@ hist_red <-
 hist_red
 ```
 
-```{r}
-# Filtering to LA County
-# Using st_centroid to assign one HOLC grade per census block group
+The historical HOLC grades plotted on the map shows an overlap between areas that were historically redlined and current neighborhoods that have low socio-economic status and higher populations of people of color. Neighborhoods in historically green areas, are currently affluent neighborhoods with higher populations of white people. South LA, Boyle Heights and Long Beach have a high proportion of historical yellow and red grades. Pacific Palisades, Beverly Hills, West LA and Palos Verdes are in historically green and blue area.
 
-la_cnty <- ejscreen |>
-  filter(CNTY_NAME == "Los Angeles County") |>
-  st_centroid()
-```
 
-```{r}
-# Joining census block groups and HOLC grade data
-
-holc_census <- st_join(la_cnty, holc, join = st_within)
-
-# Verifying join rows match
-if (nrow(holc_census) == nrow(la_cnty)) {
-  print("join matches original data dimensions")
-} else {
-  warning("join does not match original data dimensions")
-  print(paste("holc_census has", nrow(holc_census), "rows"))
-  print(paste("la_cnty has", nrow(la_cnty), "rows"))
-}
-```
 
 ```{r}
 # Grouping census block groups by HOLC grade
 # Calculating percentage of census block groups per HOLC grade
 # Creating table of summary
-
 holc_cens_summ <- holc_census |>
+  st_drop_geometry() |>
   group_by(grade) |>
   summarise(n_bg = n()) |>
-  st_drop_geometry() |>
   mutate(
     pcnt_cens_holc = (n_bg / sum(n_bg)) * 100,
     grade = ifelse(is.na(grade), "No HOLC grade", grade)
@@ -193,22 +239,20 @@ holc_cens_summ <- holc_census |>
 holc_cens_summ
 ```
 
+HOLC grade A hade the least percentage of census block groups at 2.43% , for census block groups within and HOLC grade, HOLC grade C had the highest percentage at 23.68%. Census block groups that were not within an HOLC grade accounted for 55.26% of census block groups.
+
+
+
 ```{r}
 #| fig-height: 5
 #| fig-width: 6.5
 #| fig-align: center
-# Filtering out NA HOLC grade rows
-
-holc_bg <- holc_census |>
-  filter(!is.na(grade))
-
 # Creating bar graph of mean low income percentage by HOLC grade
-
 hc_low_income <- holc_bg |>
+  st_drop_geometry() |>
   group_by(grade) |>
   summarise(mean_lowinc = mean(LOWINCPCT, na.rm = TRUE)) |>
   mutate(mean_lowinc_pct = mean_lowinc * 100) |>
-  st_drop_geometry() |>
   ggplot(
     aes(
       x = grade,
@@ -232,26 +276,26 @@ hc_low_income <- holc_bg |>
     plot.title = element_text(hjust = 0.5),
     panel.grid = element_blank()
   )
-
 hc_low_income
 ```
 
+Neighborhoods in in the green and blue historical HOLC grades had a lower average low income percentage compared to the neighborhoods in the historical yellow and red grades. Historically black and immigrant neighborhoods which were classified as "Hazardous" had the highest average low income percentage.
+
+
 ```{r}
-# Summarizing mean particulate matter 2.5 percentile by life expectancy
+#| fig-height: 5.5
+#| fig-width: 6
+#| fig-align: center
+
+# Summarizing mean particulate matter 2.5 percentile by HOLC grade
 pm25_lle <- holc_bg |>
+  st_drop_geometry() |>
   group_by(grade) |>
   summarise(
     mean_pm25 = mean(P_PM25, na.rm = TRUE),
     mean_lle = mean(P_LIFEEXPPCT, na.rm = TRUE)
-  ) |>
-  st_drop_geometry()
-```
+  )
 
-
-```{r}
-#| fig-height: 5
-#| fig-width: 6.5
-#| fig-align: center
 # Scatter plot of mean particulate matter and low life expectancy percentiles by HOLC grade
 
 ggplot(
@@ -263,6 +307,8 @@ ggplot(
   )
 ) +
   geom_point(size = 3) +
+  xlim(60, 100) +
+  ylim(20, 60) +
   scale_color_manual(
     values = holc_colors
   ) +
@@ -278,34 +324,13 @@ ggplot(
   )
 ```
 
+The scatterplot indicates that there is a positive relationship between average particulate matter 2.5 percentile and average low life expectancy percentile. As a neighborhoods historical HOLC loan approval level decreases its average particulate matter 2.5 percentile and average low life expectancy percentile increases.
 
-```{r}
-# Filtering to bicycle and pedestrian accidents
-bp_acc <- crashes_sf |>
-  filter(
-    BICYCLE_ACCIDENT == "Y" | PEDESTRIAN_ACCIDENT == "Y"
-  )
-
-# Joining accident data to HOLC grades
-bp_acc_holc <- st_join(bp_acc, y = holc, join = st_within)
-
-# Verifying join row counts match
-if (nrow(bp_acc_holc) == nrow(bp_acc)) {
-  print("join matches original data dimensions")
-} else {
-  warning("join does not match original data dimensions")
-  print(paste("bp_acc_holc has", nrow(bp_acc_holc), "rows"))
-  print(paste("bp_acc has", nrow(bp_acc), "rows"))
-}
-
-# Removing NA HOLC grade
-bp_acc_holc <- bp_acc_holc |>
-  filter(!is.na(grade))
-```
 
 ```{r}
 # Summarizing bicycle and pedestrian crashes and fatalities by HOLC grade
-accidents <- bp_acc_holc |>
+accidents <- bp_holc |>
+  st_drop_geometry() |>
   group_by(grade) |>
   summarise(
     n_bike_crash = sum(BICYCLE_ACCIDENT == "Y", na.rm = TRUE),
@@ -313,14 +338,12 @@ accidents <- bp_acc_holc |>
     n_ped_crash = sum(PEDESTRIAN_ACCIDENT == "Y", na.rm = TRUE),
     n_ped_fatal = sum(COUNT_PED_KILLED, na.rm = TRUE)
   ) |>
-  st_drop_geometry() |>
   mutate(
     pct_bike_crash = n_bike_crash / sum(n_bike_crash) * 100,
     pct_bike_fatal = n_bike_fatal / sum(n_bike_fatal) * 100,
     pct_ped_crash = n_ped_crash / sum(n_ped_crash) * 100,
     pct_ped_fatal = n_ped_fatal / sum(n_ped_fatal) * 100
   )
-
 # Pivoting long for visualization
 accidents_long <- accidents |>
   select(
@@ -346,6 +369,8 @@ accidents_long <- accidents |>
   )
 ```
 
+
+
 ```{r}
 #| fig-height: 5
 #| fig-width: 6.5
@@ -361,6 +386,10 @@ accidents_long |>
     )
   ) +
   geom_col() +
+  geom_text(
+    aes(label = paste0(round(Percentage, 1), "%")),
+    vjust = -0.5
+  ) +
   scale_fill_manual(
     values = holc_colors
   ) +
@@ -385,8 +414,7 @@ accidents_long |>
   )
 ```
 
-
-
+Neighborhoods in historical HOLC green and blue grades have lower average percentages of bicycle and pedestrian crashes and fatalities. Neighborhoods in historical HOLC yellow and red grades have higher average percentages of bicycle and pedestrian crashes and fatalities. The green HOLC grade neighborhoods have the lowest percentage of __% and the yellow HOLC grade neighborhoods have the highest average percentage at __%. 
 ```{r}
 #| fig-height: 5
 #| fig-width: 6.5
@@ -402,6 +430,10 @@ accidents_long |>
     )
   ) +
   geom_col() +
+  geom_text(
+    aes(label = paste0(round(Percentage, 1), "%")),
+    vjust = -0.5
+  ) +
   scale_fill_manual(
     values = holc_colors
   ) +
@@ -423,5 +455,50 @@ accidents_long |>
     plot.title = element_text(hjust = 0.5),
     panel.grid = element_blank(),
     strip.background = element_blank()
+  )
+```
+(Results Writeup for plot above)
+
+```{r}
+#| fig-height: 5
+#| fig-width: 6.5
+#| fig-align: center
+# Summarizing bicycle and pedestrian crashes and fatalities by HOLC grade
+bp_holc |>
+  st_drop_geometry() |>
+  group_by(grade) |>
+  summarise(ped_bike_crash = n()) |>
+  mutate(
+    pct = ped_bike_crash / sum(ped_bike_crash) * 100
+  ) |>
+  ggplot(
+    # Creating bar graphs for all accidents (including fatalities)
+    aes(
+      x = grade,
+      y = pct,
+      fill = grade
+    )
+  ) +
+  geom_col() +
+  geom_text(
+    aes(label = paste0(round(pct, 1), "%")),
+    vjust = -0.5
+  ) +
+  scale_fill_manual(
+    values = holc_colors
+  ) +
+  scale_y_continuous(
+    labels = scales::label_percent(scale = 1)
+  ) +
+  labs(
+    title = "Bicycle and Pedestrian Accidents Including Fatalities by HOLC Grade",
+    x = "HOLC Grade",
+    y = "Percent of Incidents",
+    fill = "HOLC Grade"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid = element_blank()
   )
 ```
