@@ -16,9 +16,7 @@ execute:
 library(tidyverse)
 library(sf)
 library(here)
-library(stars)
 library(tmap)
-library(spData)
 library(gt)
 ```
 
@@ -40,10 +38,11 @@ This analysis examines the relationship between historical HOLC neighborhood gra
 
 
 ## Data 
-Historical HOLC data was originally downloaded from University of Richmonds' [Mapping Inequality project](https://dsl.richmond.edu/panorama/redlining/data). 
+Historical HOLC data was originally downloaded from University of Richmond's [Mapping Inequality project](https://dsl.richmond.edu/panorama/redlining/data). 
 
-Bike and pedestrian accident data came from the [Statewide Integrated Traffic Records System (SWITRS) database](https://tims.berkeley.edu/). 
-[Census block group data]((https://19january2021snapshot.epa.gov/ejscreen_.html)) from the Environmental Protection Agency's Environmental Justice Screening and Mapping Tool (EJSCREEN). This data set combines environmental and demographic indicators.  
+Bike and pedestrian crash data came from the [Statewide Integrated Traffic Records System (SWITRS) database](https://tims.berkeley.edu/). 
+
+The original EJSCREEN data set was obtained from the EPA website and was accessed from a [Google Drive folder](https://drive.google.com/file/d/1nG6Nj1bXfzQFOVMO8Km3eNy4SWu1YcIQ/view).    
 
 
 ```{r}
@@ -270,7 +269,7 @@ hc_low_income <- holc_bg |>
   scale_fill_manual(
     values = holc_colors
   ) +
-  scale_y_continuous(labels = scales::label_percent(scale = 1)) +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
   labs(
     title = "Low Income Percentage by HOLC Grade",
     x = "HOLC Grade",
@@ -365,7 +364,7 @@ bp_holc |>
     values = holc_colors
   ) +
   scale_y_continuous(
-    labels = scales::label_percent(scale = 1)
+    labels = function(x) paste0(x, "%")
   ) +
   labs(
     title = "Bicycle and Pedestrian Crashes Including Fatalities by HOLC Grade",
@@ -389,10 +388,16 @@ There are limitations to this analysis, due to many census block groups not havi
 
 # References
 
-[1] Nelson, R. K., Winling, L., et al. (2023). *Mapping inequality: Redlining in New Deal America*. Digital Scholarship Lab, University of Richmond. https://dsl.richmond.edu/panorama/redlining/howandwhy
+[1] Nelson, R. K., Winling, L., et al. (2023). *Mapping inequality: Redlining in New Deal America*. Digital Scholarship Lab, University of Richmond. https://dsl.richmond.edu/panorama/redlining/howandwhy [Accessed October 22, 2026]
 
-[2] Mitchell, B., & Franco, J. (2018, March 20). *HOLC “redlining” maps: The persistent structure of segregation and economic inequality*. National Community Reinvestment Coalition. https://ncrc.org/holc/
+[2] Mitchell, B., & Franco, J. (2018, March 20). *HOLC “redlining” maps: The persistent structure of segregation and economic inequality*. National Community Reinvestment Coalition. https://ncrc.org/holc/ [Accessed October 22, 2026]
 
-[3] Schmidt, K. (2023, October 19). *Structural racism and pedestrian safety*. Public Health Post, Boston University School of Public Health. https://publichealthpost.org/health-equity/structural-racism-and-pedestrian-safety/
+[3] Schmidt, K. (2023, October 19). *Structural racism and pedestrian safety*. Public Health Post, Boston University School of Public Health. https://publichealthpost.org/health-equity/structural-racism-and-pedestrian-safety/ [Accessed October 22, 2026]
 
-[4] Braveman, P. A., Arkin, E., Proctor, D., Kauh, T., & Holm, N. (2022). Systemic and structural racism: Definitions, examples, health damages, and approaches to dismantling. *Health Affairs, 41*(2), 171–178. https://doi.org/10.1377/hlthaff.2021.01394
+[4] Braveman, P. A., Arkin, E., Proctor, D., Kauh, T., & Holm, N. (2022). Systemic and structural racism: Definitions, examples, health damages, and approaches to dismantling. *Health Affairs, 41*(2), 171–178. https://doi.org/10.1377/hlthaff.2021.01394 
+
+[5] University of Richmond, Digital Scholarship Lab. (n.d.). Mapping inequality: Redlining in New Deal America [Data set](https://dsl.richmond.edu/panorama/redlining/data)
+
+[6] University of California, Berkeley, Safe Transportation Research and Education Center (SafeTREC). (n.d.). Transportation Injury Mapping System (TIMS): Statewide Integrated Traffic Records System (SWITRS) crash data [Data set](https://tims.berkeley.edu/)
+
+[7] U.S. Environmental Protection Agency. (2023). EJSCREEN 2023: Environmental Justice Screening and Mapping Tool [Data set](https://drive.google.com/file/d/1nG6Nj1bXfzQFOVMO8Km3eNy4SWu1YcIQ/view)
